@@ -29,6 +29,7 @@ public class GeigerLEService: NSObject {
     private let settingsCharID = "7D6FCD08-3416-4575-94A4-7069B6CC74AD"
     private let displaySettingsCharID = "4079043D-E363-43BA-AC2F-42E9F8698524"
     private let commandsCharID = "7B26E39D-7DAC-45FF-BC86-EE2A5BCDAFCC"
+    private let alertsCharID = "0456DE03-9F25-4961-8740-72EEAF987A2E"
     
     private var enabledModeChar: CBMutableCharacteristic?
     private var zonesChar: CBMutableCharacteristic?
@@ -37,6 +38,7 @@ public class GeigerLEService: NSObject {
     private var settingsChar: CBMutableCharacteristic?
     private var displaySettingsChar: CBMutableCharacteristic?
     private var commandsChar: CBMutableCharacteristic?
+    private var alertsChar: CBMutableCharacteristic?
     
     private let geigerCommandCharID = "F35065D4-DE1D-4A50-B7D0-4AE378B7E51D"
     private var geigerCommandChar: CBMutableCharacteristic?
@@ -50,18 +52,21 @@ public class GeigerLEService: NSObject {
     private var vents: [String] = ventsConstants
     private var settings: [String] = settingsConstant
     private var displaySettings: [String] = displaySettingsConstant
+    private var alerts: [String] = alertsConstant
     
     static let enabledModeConstant = ["0"]
     static let zonesConstants = ["312098095111", "103100095100"]
     static let ventsConstants = ["11090991101", "21091001100"]
     static let settingsConstant = ["SSID_2"]
     static let displaySettingsConstant = ["1111111"]
+    static let alertsConstant = ["101018301234", "060210450234"]
     
     private var isSendingEnabledMode: Bool = false
     private var isSendingZones: Bool = false
     private var isSendingVents: Bool = false
     private var isSendingSettings: Bool = false
     private var isSendingDisplaySettings: Bool = false
+    private var isSendingAlerts: Bool = false
 
 
     ///Calling this function will attempt to start advertising the services
@@ -112,7 +117,9 @@ public class GeigerLEService: NSObject {
         
         commandsChar = CBMutableCharacteristic(type: CBUUID(string: commandsCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         
-        randomService?.characteristics = [enabledModeChar!, zonesChar!, ventsChar!, rvIDChar!, settingsChar!, displaySettingsChar!, commandsChar!]
+        alertsChar = CBMutableCharacteristic(type: CBUUID(string: alertsCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
+        
+        randomService?.characteristics = [enabledModeChar!, zonesChar!, ventsChar!, rvIDChar!, settingsChar!, displaySettingsChar!, commandsChar!, alertsChar!]
         
         peripheralManager?.add(randomService!)
     }
@@ -156,6 +163,8 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
             sendSettings()
         } else if isSendingDisplaySettings {
             sendDisplaySettings()
+        } else if isSendingAlerts {
+            sendAlerts()
         }
     }
     
@@ -228,6 +237,14 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
             } else if request.characteristic.uuid == commandsChar?.uuid {
                 if let data = request.value {
                     peripheralManager?.updateValue(data, for: commandsChar!, onSubscribedCentrals: nil)
+                }
+            } else if request.characteristic.uuid == alertsChar?.uuid {
+                isSendingAlerts = true
+                if let data = request.value {
+                    let stringReceived = String(data: data, encoding: .utf8)
+                    if stringReceived == "1" {
+                        sendAlerts()
+                    }
                 }
             }
         }
@@ -316,6 +333,24 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
                 }
             }
         }
+    }
+    
+    private func sendAlerts() {
+        while !alerts.isEmpty {
+            let alertToSend = alerts.first
+            if peripheralManager?.updateValue(Data(alertToSend!.utf8), for: alertsChar!, onSubscribedCentrals: nil) == false {
+                return
+            } else {
+                print("SENT ALERT:  \(alertToSend!)")
+                alerts.remove(at: 0)
+                if alerts.isEmpty {
+                    isSendingAlerts = false
+                    alerts = GeigerLEService.alertsConstant
+                    break
+                }
+            }
+        }
+
     }
     
     public func peripheralManagerDidStartAdvertising(_ peripheral: CBPeripheralManager, error: Error?) {
