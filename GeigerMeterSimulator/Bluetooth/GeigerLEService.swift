@@ -33,6 +33,7 @@ public class GeigerLEService: NSObject {
     private let rvConfigCharID = "7CF17FC0-6B54-4E5E-94F1-CB5037C6C1E2"
     private let currentEventCharID = "8C761318-A8A3-429D-9FC0-E31CF9321537"
     private let nextEventCharID = "C76AA19C-DE31-4CF7-B466-CE27AFB212CC"
+    private let modesCharID = "C286A7FF-5FBF-407D-8983-C5812C9BAF04"
     
     private var enabledModeChar: CBMutableCharacteristic?
     private var zonesChar: CBMutableCharacteristic?
@@ -45,6 +46,7 @@ public class GeigerLEService: NSObject {
     private var rvConfigChar: CBMutableCharacteristic?
     private var nextEventChar: CBMutableCharacteristic?
     private var currentEventChar: CBMutableCharacteristic?
+    private var modesChar: CBMutableCharacteristic?
     
     private let geigerCommandCharID = "F35065D4-DE1D-4A50-B7D0-4AE378B7E51D"
     private var geigerCommandChar: CBMutableCharacteristic?
@@ -59,6 +61,7 @@ public class GeigerLEService: NSObject {
     private var settings: [String] = settingsConstant
     private var displaySettings: [String] = displaySettingsConstant
     private var alerts: [String] = alertsConstant
+    private var modes: [String] = modesConstant
     
     static let enabledModeConstant = ["1"]
     static let zonesConstants = ["312098095111", "103100095100"]
@@ -66,7 +69,8 @@ public class GeigerLEService: NSObject {
     static let settingsConstant = ["SSID_2"]
     static let displaySettingsConstant = ["1111111"]
     static let alertsConstant = ["101018301234", "060210450234"]
-    static let rvConfigConstant = "0202"
+    static let modesConstant = ["1100Sleep", "2107Wake", "3070Away", "4055Smart Vent", "5060Pet"]
+    static let rvConfigConstant = "020205"
     static let nextEvent = "$"
     static let currentEvent = "$"
     
@@ -79,6 +83,7 @@ public class GeigerLEService: NSObject {
     private var isSendingRVConfig: Bool = false
     private var isSendingCurrentEvent: Bool = false
     private var isSendingNextEvent: Bool = false
+    private var isSendingModes: Bool = false
 
 
     ///Calling this function will attempt to start advertising the services
@@ -126,8 +131,9 @@ public class GeigerLEService: NSObject {
         rvConfigChar = CBMutableCharacteristic(type: CBUUID(string: rvConfigCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         nextEventChar = CBMutableCharacteristic(type: CBUUID(string: nextEventCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         currentEventChar = CBMutableCharacteristic(type: CBUUID(string: currentEventCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
+        modesChar = CBMutableCharacteristic(type: CBUUID(string: modesCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         
-        randomService?.characteristics = [enabledModeChar!, zonesChar!, ventsChar!, rvIDChar!, settingsChar!, displaySettingsChar!, commandsChar!, alertsChar!, rvConfigChar!, nextEventChar!, currentEventChar!]
+        randomService?.characteristics = [enabledModeChar!, zonesChar!, ventsChar!, rvIDChar!, settingsChar!, displaySettingsChar!, commandsChar!, alertsChar!, rvConfigChar!, nextEventChar!, currentEventChar!, modesChar!]
         
         peripheralManager?.add(randomService!)
     }
@@ -179,6 +185,8 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
             sendCurrentEvent()
         } else if isSendingNextEvent {
             sendNextEvent()
+        } else if isSendingModes {
+            sendModes()
         }
     }
     
@@ -196,11 +204,6 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
             print("SENT RV ID")
         }
     }
-    
-    
-
-    
-    
     
     public func peripheralManager(_ peripheral: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
         requests.forEach { request in
@@ -285,6 +288,14 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
                         sendNextEvent()
                     }
                 }
+            } else if request.characteristic.uuid == modesChar?.uuid {
+                isSendingModes = true
+                if let data = request.value {
+                    let stringReceived = String(data: data, encoding: .utf8)
+                    if stringReceived == "1" {
+                        sendModes()
+                    }
+                }
             }
         }
     }
@@ -334,6 +345,23 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
                 if vents.isEmpty {
                     isSendingVents = false
                     vents = GeigerLEService.ventsConstants
+                    break
+                }
+            }
+        }
+    }
+    
+    private func sendModes() {
+        while !modes.isEmpty {
+            let modeToSend = modes.first
+            if peripheralManager?.updateValue(Data(modeToSend!.utf8), for: modesChar!, onSubscribedCentrals: nil) == false {
+                return
+            } else {
+                print("SENT MODE \(modeToSend!)")
+                modes.remove(at: 0)
+                if modes.isEmpty {
+                    isSendingModes = false
+                    modes = GeigerLEService.modesConstant
                     break
                 }
             }
@@ -398,7 +426,7 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
             return
         } else {
             print("SENT RV CONFIG:  \(config)")
-            isSendingAlerts = false
+            isSendingRVConfig = false
         }
     }
     
