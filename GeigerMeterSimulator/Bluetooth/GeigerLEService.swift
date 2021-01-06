@@ -34,6 +34,7 @@ public class GeigerLEService: NSObject {
     private let currentEventCharID = "8C761318-A8A3-429D-9FC0-E31CF9321537"
     private let nextEventCharID = "C76AA19C-DE31-4CF7-B466-CE27AFB212CC"
     private let modesCharID = "C286A7FF-5FBF-407D-8983-C5812C9BAF04"
+    private let eventsCharID = "61CB43BC-9BBC-41B7-A55C-8D080D2D4EC7"
     
     private var enabledModeChar: CBMutableCharacteristic?
     private var zonesChar: CBMutableCharacteristic?
@@ -47,6 +48,7 @@ public class GeigerLEService: NSObject {
     private var nextEventChar: CBMutableCharacteristic?
     private var currentEventChar: CBMutableCharacteristic?
     private var modesChar: CBMutableCharacteristic?
+    private var eventsChar: CBMutableCharacteristic?
     
     private let geigerCommandCharID = "F35065D4-DE1D-4A50-B7D0-4AE378B7E51D"
     private var geigerCommandChar: CBMutableCharacteristic?
@@ -62,10 +64,11 @@ public class GeigerLEService: NSObject {
     private var displaySettings: [String] = displaySettingsConstant
     private var alerts: [String] = alertsConstant
     private var modes: [String] = modesConstant
+    private var events: [String] = eventsConstant
     
     static let enabledModeConstant = ["1"]
     static let zonesConstants = ["312098095111", "103100095100"]
-    static let ventsConstants = ["11090991101", "21091001100"]
+    static let ventsConstants = ["110909911011", "210910011002"]
     static let settingsConstant = ["SSID_2"]
     static let displaySettingsConstant = ["1111111"]
     static let alertsConstant = ["101018301234", "060210450234"]
@@ -73,6 +76,11 @@ public class GeigerLEService: NSObject {
     static let rvConfigConstant = "020205"
     static let nextEvent = "$"
     static let currentEvent = "$"
+    //static let eventsConstant = ["0111111001045#1100", "3200#11#EventName", "$"] // event with 2 zones & 1 vent config, on week days at 10:45
+    //static let eventsConstant = ["0100000110930#1100", "#11#EventName$"] // event with 1 zone & 1 vent config, on weekends at 09:30
+    //static let eventsConstant = ["0100000110930##11#Ev", "entName$"] // event with only 1 vent config, on weekends at 09:30
+    //static let eventsConstant = ["0100000110930#3200##", "EventName$"] // event with only 1 zone config, on weekends at 09:30
+    static let eventsConstant = ["0100000110930#3200##", "WeekendEvent$", "0211111001045#1100", "3200#11#WeekEvent$"] // Two events
     
     private var isSendingEnabledMode: Bool = false
     private var isSendingZones: Bool = false
@@ -84,6 +92,7 @@ public class GeigerLEService: NSObject {
     private var isSendingCurrentEvent: Bool = false
     private var isSendingNextEvent: Bool = false
     private var isSendingModes: Bool = false
+    private var isSendingEvents: Bool = false
 
 
     ///Calling this function will attempt to start advertising the services
@@ -132,8 +141,9 @@ public class GeigerLEService: NSObject {
         nextEventChar = CBMutableCharacteristic(type: CBUUID(string: nextEventCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         currentEventChar = CBMutableCharacteristic(type: CBUUID(string: currentEventCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         modesChar = CBMutableCharacteristic(type: CBUUID(string: modesCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
+        eventsChar = CBMutableCharacteristic(type: CBUUID(string: eventsCharID), properties: [.writeWithoutResponse, .notify], value: nil, permissions: .writeable)
         
-        randomService?.characteristics = [enabledModeChar!, zonesChar!, ventsChar!, rvIDChar!, settingsChar!, displaySettingsChar!, commandsChar!, alertsChar!, rvConfigChar!, nextEventChar!, currentEventChar!, modesChar!]
+        randomService?.characteristics = [enabledModeChar!, zonesChar!, ventsChar!, rvIDChar!, settingsChar!, displaySettingsChar!, commandsChar!, alertsChar!, rvConfigChar!, nextEventChar!, currentEventChar!, modesChar!, eventsChar!]
         
         peripheralManager?.add(randomService!)
     }
@@ -187,6 +197,8 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
             sendNextEvent()
         } else if isSendingModes {
             sendModes()
+        } else if isSendingEvents {
+            sendEvents()
         }
     }
     
@@ -294,6 +306,14 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
                     let stringReceived = String(data: data, encoding: .utf8)
                     if stringReceived == "1" {
                         sendModes()
+                    }
+                }
+            } else if request.characteristic.uuid == eventsChar?.uuid {
+                isSendingEvents = true
+                if let data = request.value {
+                    let stringReceived = String(data: data, encoding: .utf8)
+                    if stringReceived == "1" {
+                        sendEvents()
                     }
                 }
             }
@@ -449,6 +469,23 @@ extension GeigerLEService: CBPeripheralManagerDelegate {
         } else {
             print("SENT NEXT EVENT:  \(nextEvent)")
             isSendingNextEvent = false
+        }
+    }
+    
+    private func sendEvents() {
+        while !events.isEmpty {
+            let eventToSend = events.first
+            if peripheralManager?.updateValue(Data(eventToSend!.utf8), for: eventsChar!, onSubscribedCentrals: nil) == false {
+                return
+            } else {
+                print("SENT EVENT: \(eventToSend)")
+                events.remove(at: 0)
+                if events.isEmpty {
+                    isSendingEvents = false
+                    events = GeigerLEService.eventsConstant
+                    break
+                }
+            }
         }
     }
     
